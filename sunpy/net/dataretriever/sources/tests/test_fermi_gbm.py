@@ -1,3 +1,5 @@
+from unittest import mock
+
 import pytest
 from hypothesis import given
 
@@ -16,6 +18,34 @@ from sunpy.time import parse_time
 @pytest.fixture
 def LCClient():
     return fermi_gbm.GBMClient()
+
+
+def mock_query_object(LCClient, timerange=None):
+    """
+    Creating a Query Response object and prefilling it with some information
+    """
+    if timerange is None:
+        start = parse_time('2016/1/1')
+        end = parse_time('2016/1/1 23:59:59')
+    else:
+        start = timerange.start
+        almost_day = TimeDelta(1 * u.day - 1 * u.millisecond)
+        end = timerange.end + almost_day
+
+    obj = {
+        'Start Time': start,
+        'End Time': end,
+        'Instrument': 'GBM',
+        'Physobs': 'flux',
+        'Source': 'FERMI',
+        'Provider': 'NASA',
+        'Resolution': 'cspec',
+        'Detector': 'n5',
+        'url': ('https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/daily/'
+                '2016/01/01/current/glg_cspec_n5_160101_v00.pha')
+    }
+    results = QueryResponse([obj], client=LCClient)
+    return results
 
 
 @pytest.mark.remote_data
@@ -48,40 +78,47 @@ def test_can_handle_query(time):
     assert ans4 is False
 
 
-@pytest.mark.remote_data
 @pytest.mark.parametrize(("time", "instrument"), [
     (a.Time('2012/8/9', '2012/8/9'), a.Instrument.gbm),
 ])
 def test_query(LCClient, time, instrument):
-    qr1 = LCClient.search(time, instrument, a.Detector.n5, a.Resolution.ctime)
-    assert isinstance(qr1, QueryResponse)
-    assert len(qr1) == 1
-    almost_day = TimeDelta(1 * u.day - 1 * u.millisecond)
-    assert qr1.time_range().start == time.start.to_datetime()
-    assert qr1.time_range().end == (time.end + almost_day).to_datetime()
+    with mock.patch('sunpy.net.dataretriever.sources.fermi_gbm.GBMClient.search',
+                    return_value=mock_query_object(LCClient, timerange=time)):
+        qr1 = LCClient.search(time, instrument, a.Detector.n5, a.Resolution.ctime)
+        assert isinstance(qr1, QueryResponse)
+        assert len(qr1) == 1
+        almost_day = TimeDelta(1 * u.day - 1 * u.millisecond)
+        assert qr1.time_range().start == time.start.to_datetime()
+        assert qr1.time_range().end == (time.end + almost_day).to_datetime()
 
 
-@pytest.mark.remote_data
 @pytest.mark.parametrize(("time", "instrument"), [
     (a.Time('2012/11/27', '2012/11/27'), a.Instrument.gbm),
 ])
 def test_get(LCClient, time, instrument):
-    qr1 = LCClient.search(time, instrument, a.Detector.n5, a.Resolution.ctime)
-    download_list = LCClient.fetch(qr1)
-    assert len(download_list) == len(qr1)
+    with mock.patch('sunpy.net.dataretriever.sources.fermi_gbm.GBMClient.search',
+                    return_value=mock_query_object(LCClient)):
+        qr1 = LCClient.search(time, instrument, a.Detector.n5, a.Resolution.ctime)
+        with mock.patch('sunpy.net.dataretriever.sources.fermi_gbm.GBMClient.fetch',
+                        return_value=mock_query_object(LCClient)):
+            download_list = LCClient.fetch(qr1)
+            assert len(download_list) == len(qr1)
 
 
-@pytest.mark.remote_data
 @pytest.mark.parametrize(
     'query',
     [(a.Time('2012/10/4', '2012/10/5') & a.Instrument.gbm & a.Detector.n5)])
 def test_fido(LCClient, query):
-    qr = Fido.search(query)
-    client = qr[0].client
-    assert isinstance(qr, UnifiedResponse)
-    assert isinstance(client, type(LCClient))
-    response = Fido.fetch(qr)
-    assert len(response) == qr._numfile
+    with mock.patch('sunpy.net.Fido.search',
+                    return_value=UnifiedResponse(mock_query_object(LCClient))):
+        qr = Fido.search(query)
+        client = qr[0].client
+        assert isinstance(qr, UnifiedResponse)
+        assert isinstance(client, type(LCClient))
+        with mock.patch('sunpy.net.Fido.fetch',
+                        return_value=UnifiedResponse(mock_query_object(LCClient))):
+            response = Fido.fetch(qr)
+            assert len(response) == qr._numfile
 
 
 def test_attr_reg():
@@ -94,29 +131,6 @@ def test_client_repr(LCClient):
     """
     output = str(LCClient)
     assert output[:51] == 'sunpy.net.dataretriever.sources.fermi_gbm.GBMClient'
-
-
-def mock_query_object(LCClient):
-    """
-    Creating a Query Response object and prefilling it with some information
-    """
-    # Creating a Query Response Object
-    start = '2016/1/1'
-    end = '2016/1/1 23:59:59'
-    obj = {
-        'Start Time': parse_time(start),
-        'End Time': parse_time(end),
-        'Instrument': 'GBM',
-        'Physobs': 'flux',
-        'Source': 'FERMI',
-        'Provider': 'NASA',
-        'Resolution': 'cspec',
-        'Detector': 'n5',
-        'url': ('https://heasarc.gsfc.nasa.gov/FTP/fermi/data/gbm/daily/'
-                '2016/01/01/current/glg_cspec_n5_160101_v00.pha')
-    }
-    results = QueryResponse([obj], client=LCClient)
-    return results
 
 
 def test_show(LCClient):

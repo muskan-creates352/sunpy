@@ -1,0 +1,1 @@
+Mocked online tests for `~sunpy.net.dataretriever.sources.fermi_gbm.GBMClient` to run offline without remote server requests.
