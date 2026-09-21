@@ -33,6 +33,29 @@ def test_wavelength_attr():
 @pytest.mark.thread_unsafe(reason="mocks a function")
 def test_instrument_show_in_notebook(mocker):
     pytest.importorskip("itables")
-    mock_datagrid =  mocker.patch("itables.show")
+    mock_datagrid = mocker.patch("itables.show")
     a.Instrument.show_in_notebook()
     mock_datagrid.assert_called_once()
+
+
+@pytest.mark.thread_unsafe(reason="mocks a function")
+def test_attr_repr_html_itables(mocker):
+    pytest.importorskip("itables")
+    mock_datatable = mocker.patch("itables.to_html_datatable", return_value="<div>mock_datatable</div>")
+    html = a.Instrument._repr_html_()
+    assert "<div>mock_datatable</div>" in html
+    mock_datatable.assert_called_once()
+
+
+def test_attr_repr_html_fallback(monkeypatch):
+    import builtins
+    real_import = builtins.__import__
+
+    def mock_import(name, *args, **kwargs):
+        if name == "itables":
+            raise ImportError("No module named itables")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", mock_import)
+    html = a.Instrument._repr_html_()
+    assert "<table" in html

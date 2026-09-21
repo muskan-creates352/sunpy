@@ -1,0 +1,1 @@
+Added interactive datatable rendering to `~sunpy.net.attr.AttrMeta._repr_html_` using ``itables`` when available.

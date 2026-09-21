@@ -158,7 +158,20 @@ class AttrMeta(type):
         """
         This enables the "pretty" printing of Attrs with html.
         """
-        return _print_attrs(self, html=True)
+        try:
+            from itables import to_html_datatable
+
+            table = _create_table(self)
+            class_name = f"{(self.__module__ + '.') or ''}{self.__name__}"
+            lines = [class_name]
+            try:
+                lines.append(dedent(self.__doc__.partition("\n\n")[0]) + "\n")
+            except AttributeError:
+                pass
+            header = "".join([f"<p>{line}</p>" for line in lines])
+            return header + to_html_datatable(table.to_pandas())
+        except (ImportError, Exception):
+            return _print_attrs(self, html=True)
 
 
     def show_in_notebook(self, **kwargs):
