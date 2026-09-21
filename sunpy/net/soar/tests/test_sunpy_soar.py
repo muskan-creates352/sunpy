@@ -770,4 +770,3 @@ def test_do_search_timing_logging(caplog):
     assert "Sent query: http://soar.esac.esa.int/soar-sl-tap/tap/sync?test=1" in caplog.text
     assert "(took " in caplog.text
     assert " s)" in caplog.text
-
