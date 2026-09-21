@@ -1,0 +1,1 @@
+Added elapsed request duration to debug logging in `~sunpy.net.soar.SOARClient`.

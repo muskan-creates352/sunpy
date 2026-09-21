@@ -6,6 +6,7 @@ Orbiter Archive (SOAR).
 import json
 import pathlib
 import re
+import time
 from copy import copy
 from json.decoder import JSONDecodeError
 
@@ -217,8 +218,10 @@ class SOARClient(BaseClient):
         # Need to force requests to not form-encode the parameters
         payload = "&".join([f"{key}={val}" for key, val in payload.items()])
         # Get request info
+        start_time = time.perf_counter()
         r = requests.get(f"{self.tap_endpoint}/sync", params=payload, timeout=60)
-        log.debug(f"Sent query: {r.url}")
+        elapsed = time.perf_counter() - start_time
+        log.debug(f"Sent query: {r.url} (took {elapsed:.2f} s)")
         r.raise_for_status()
 
         try:

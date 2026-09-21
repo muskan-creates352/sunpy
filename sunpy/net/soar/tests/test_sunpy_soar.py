@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from unittest import mock
 
@@ -738,3 +739,35 @@ def test_custom_tap_endpoint_search():
 
         assert mock_get.called
         assert mock_get.call_args[0][0] == f"{custom_url}/sync"
+
+
+def test_do_search_timing_logging(caplog):
+    """Verify that _do_search emits a debug log including the query URL and elapsed time."""
+    client = SOARClient()
+
+    mock_resp = mock.MagicMock()
+    mock_resp.json.return_value = {
+        "metadata": [
+            {"name": "instrument"},
+            {"name": "descriptor"},
+            {"name": "level"},
+            {"name": "begin_time"},
+            {"name": "end_time"},
+            {"name": "data_item_id"},
+            {"name": "filename"},
+            {"name": "filesize"},
+            {"name": "soop_name"},
+        ],
+        "data": [],
+    }
+    mock_resp.status_code = 200
+    mock_resp.url = "http://soar.esac.esa.int/soar-sl-tap/tap/sync?test=1"
+
+    with mock.patch("sunpy.net.soar.client.requests.get", return_value=mock_resp):
+        with caplog.at_level(logging.DEBUG, logger="sunpy"):
+            client._do_search(["instrument='EUI'"])
+
+    assert "Sent query: http://soar.esac.esa.int/soar-sl-tap/tap/sync?test=1" in caplog.text
+    assert "(took " in caplog.text
+    assert " s)" in caplog.text
+
