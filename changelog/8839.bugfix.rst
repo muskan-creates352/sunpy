@@ -1,0 +1,1 @@
+Fixed :meth:`~sunpy.net.jsoc.jsoc.JSOCResponse.path_format_keys` incorrectly advertising all table column names instead of only ``{'file'}``, which is the only formatting keyword supported when downloading staged data from JSOC.
