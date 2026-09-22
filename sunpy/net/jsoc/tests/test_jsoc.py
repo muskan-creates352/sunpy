@@ -47,6 +47,11 @@ def test_empty_jsoc_response():
     assert len(Jresp) == 0
 
 
+def test_jsoc_response_path_format_keys(jsoc_response_double):
+    assert jsoc_response_double.path_format_keys() == {'file'}
+    assert JSOCResponse().path_format_keys() == {'file'}
+
+
 @pytest.mark.remote_data
 def test_return_query_args(client):
     res = client.search(a.jsoc.PrimeKey('HARPNUM', 3604),

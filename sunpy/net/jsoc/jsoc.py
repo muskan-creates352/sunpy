@@ -46,6 +46,15 @@ class JSOCResponse(QueryResponseTable):
         super().__init__(*args, **kwargs)
         self._original_num_rows = len(self)
 
+    def path_format_keys(self):
+        """
+        Returns all the names that can be used to format filenames.
+
+        For JSOC downloads, individual records cannot be matched to export URLs,
+        so only the ``{file}`` placeholder is supported.
+        """
+        return {'file'}
+
 
 class JSOCClient(BaseClient):
     """
@@ -385,8 +394,9 @@ class JSOCClient(BaseClient):
         ----------
         jsoc_response : `~sunpy.net.jsoc.jsoc.JSOCResponse` object
             A response object
-        path : `str`
-            Path to save data to, defaults to SunPy download dir
+        path : `str`, optional
+            Path to save data to, defaults to SunPy download dir.
+            Supports the ``{file}`` keyword to format the filename.
         progress : `bool`, optional
             If `True` show a progress bar showing how many of the total files
             have been downloaded. If `False`, no progress bar will be shown.
@@ -464,8 +474,9 @@ class JSOCClient(BaseClient):
         requests : `~drms.ExportRequest`, `str`, `list`
             `~drms.ExportRequest` objects or `str` request IDs or lists
             returned by `~sunpy.net.jsoc.jsoc.JSOCClient.request_data`.
-        path : `str`
+        path : `str`, optional
             Path to save data to, defaults to SunPy download dir.
+            Supports the ``{file}`` keyword to format the filename.
         progress : `bool`, optional
             If `True` show a progress bar showing how many of the total files
             have been downloaded. If `False`, no progress bar will be shown.
