@@ -1,0 +1,1 @@
+Added a `filename_filter` parameter to sunpy.net.jsoc.JSOCClient.get_request and sunpy.net.jsoc.JSOCClient.fetch to allow filtering exported filenames before enqueuing downloads.

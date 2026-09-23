@@ -398,3 +398,132 @@ def test_segments_query(client):
     assert seg_res["Bp"][0].startswith("/SUM")
     assert seg_res["magnetogram"][0].endswith("magnetogram.fits")
     assert seg_res["Bp"][0].endswith("Bp.fits")
+
+
+class _MockExportRequest:
+    def __init__(self, filenames, protocol='fits', method='url'):
+        import pandas as pd
+        self.status = 0
+        self.protocol = protocol
+        self.method = method
+        self.request_url = 'http://jsoc.stanford.edu/data'
+        self.data = pd.DataFrame({'filename': filenames})
+        self.urls = pd.DataFrame({'url': [f'{self.request_url}/{fn}' for fn in filenames]})
+        self._d = {'size': 10}
+
+    def has_succeeded(self):
+        return True
+
+
+class _MockDownloader:
+    def __init__(self, *args, **kwargs):
+        self.enqueued = []
+
+    def enqueue_file(self, url, filename=None, **kwargs):
+        self.enqueued.append((url, filename))
+
+    def download(self):
+        return Results([fname for _, fname in self.enqueued])
+
+
+def test_get_request_filename_filter_callable(client, tmp_path):
+    filenames = ['aia.lev1.171A.image.fits', 'aia.lev1.171A.spikes.fits', 'aia.lev1.193A.image.fits']
+    mock_req = _MockExportRequest(filenames)
+    dl = _MockDownloader()
+
+    res = client.get_request(
+        mock_req,
+        path=str(tmp_path),
+        downloader=dl,
+        filename_filter=lambda f: 'spikes' not in f.lower(),
+    )
+
+    assert len(dl.enqueued) == 2
+    enqueued_names = [f for _, f in dl.enqueued]
+    assert any('171A.image.fits' in f for f in enqueued_names)
+    assert any('193A.image.fits' in f for f in enqueued_names)
+    assert not any('spikes' in f for f in enqueued_names)
+    assert len(res) == 2
+
+
+def test_get_request_filename_filter_regex_str(client, tmp_path):
+    filenames = ['aia.lev1.171A.image.fits', 'aia.lev1.171A.spikes.fits', 'aia.lev1.193A.image.fits']
+    mock_req = _MockExportRequest(filenames)
+    dl = _MockDownloader()
+
+    client.get_request(
+        mock_req,
+        path=str(tmp_path),
+        downloader=dl,
+        filename_filter=r'\.image\.',
+    )
+
+    assert len(dl.enqueued) == 2
+    enqueued_names = [f for _, f in dl.enqueued]
+    assert not any('spikes' in f for f in enqueued_names)
+
+
+def test_get_request_filename_filter_re_pattern(client, tmp_path):
+    filenames = ['aia.lev1.171A.image.fits', 'aia.lev1.171A.spikes.fits', 'aia.lev1.193A.image.fits']
+    mock_req = _MockExportRequest(filenames)
+    dl = _MockDownloader()
+
+    client.get_request(
+        mock_req,
+        path=str(tmp_path),
+        downloader=dl,
+        filename_filter=re.compile(r'\.image\.'),
+    )
+
+    assert len(dl.enqueued) == 2
+    enqueued_names = [f for _, f in dl.enqueued]
+    assert not any('spikes' in f for f in enqueued_names)
+
+
+def test_get_request_filename_filter_none_downloads_all(client, tmp_path):
+    filenames = ['aia.lev1.171A.image.fits', 'aia.lev1.171A.spikes.fits', 'aia.lev1.193A.image.fits']
+    mock_req = _MockExportRequest(filenames)
+    dl = _MockDownloader()
+
+    client.get_request(
+        mock_req,
+        path=str(tmp_path),
+        downloader=dl,
+        filename_filter=None,
+    )
+
+    assert len(dl.enqueued) == 3
+
+
+def test_get_request_filename_filter_invalid_type(client, tmp_path):
+    mock_req = _MockExportRequest(['file.fits'])
+    with pytest.raises(TypeError, match="filename_filter must be None, a callable, a regex pattern string, or a re.Pattern."):
+        client.get_request(mock_req, path=str(tmp_path), filename_filter=12345)
+
+
+def test_get_request_filename_filter_as_is_protocol(client, tmp_path):
+    filenames = ['hmi.m_45s.image.fits', 'hmi.m_45s.spikes.fits']
+    mock_req = _MockExportRequest(filenames, protocol='as-is')
+    dl = _MockDownloader()
+
+    client.get_request(
+        mock_req,
+        path=str(tmp_path),
+        downloader=dl,
+        filename_filter=lambda f: 'spikes' not in f,
+    )
+
+    assert len(dl.enqueued) == 1
+    assert 'image.fits' in dl.enqueued[0][1]
+
+
+@pytest.mark.thread_unsafe(reason="mocks a method")
+def test_fetch_forwards_filename_filter(mocker, client, jsoc_response_double):
+    mock_get = mocker.patch("sunpy.net.jsoc.jsoc.JSOCClient.get_request")
+    mocker.patch("sunpy.net.jsoc.jsoc.JSOCClient.request_data")
+    custom_filter = lambda f: "image" in f
+    client.fetch(jsoc_response_double, sleep=0, filename_filter=custom_filter)
+    assert mock_get.call_count == 1
+    _, kwargs = mock_get.call_args
+    assert kwargs.get("filename_filter") is custom_filter
+

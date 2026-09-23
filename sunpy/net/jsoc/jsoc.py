@@ -1,6 +1,7 @@
 import copy
 import json
 import os
+import re
 import time
 import urllib
 from pathlib import Path
@@ -370,7 +371,8 @@ class JSOCClient(BaseClient):
     @convert_row_to_table
     def fetch(self, jsoc_response, path=None, progress=True, overwrite=False,
               downloader=None, wait=True, sleep=10,
-              max_conn=default_max_conn, timeout=None, retries=5, **kwargs):
+              max_conn=default_max_conn, timeout=None, retries=5,
+              filename_filter=None, **kwargs):
         """
         Make the request for the data in a JSOC response and wait for it to be
         staged and then download the data.
@@ -412,6 +414,13 @@ class JSOCClient(BaseClient):
         retries : `int`, optional
             Number of retries in case the export request was not found on the
             server.  See `~drms.ExportRequest.wait` for more information.
+        filename_filter : callable, `str`, or `re.Pattern`, optional
+            Filter filenames before enqueuing downloads.
+            If a callable, it is called with each filename and should return `True` to
+            download or `False` to skip the file (e.g., ``lambda f: 'spike' not in f.lower()``).
+            If a `str` or `re.Pattern`, only filenames matching the pattern via `re.search`
+            will be downloaded (e.g., ``r'\\.image\\.'``).
+            Defaults to `None` (all files are downloaded).
 
         Returns
         -------
@@ -450,10 +459,12 @@ class JSOCClient(BaseClient):
 
         return self.get_request(responses, path=path, overwrite=overwrite,
                                 progress=progress, downloader=downloader,
-                                wait=wait, max_conn=max_conn, **defaults)
+                                wait=wait, max_conn=max_conn,
+                                filename_filter=filename_filter, **defaults)
 
     def get_request(self, requests, path=None, overwrite=False, progress=True,
-                    downloader=None, wait=True, max_conn=default_max_conn, **kwargs):
+                    downloader=None, wait=True, max_conn=default_max_conn,
+                    filename_filter=None, **kwargs):
         """
         Query JSOC to see if the request(s) is ready for download.
 
@@ -480,12 +491,31 @@ class JSOCClient(BaseClient):
         wait : `bool`, optional
             If `False` ``downloader.download()`` will not be called. Only has
             any effect if ``downloader`` is not `None`.
+        filename_filter : callable, `str`, or `re.Pattern`, optional
+            Filter filenames before enqueuing downloads.
+            If a callable, it is called with each filename and should return `True` to
+            download or `False` to skip the file (e.g., ``lambda f: 'spike' not in f.lower()``).
+            If a `str` or `re.Pattern`, only filenames matching the pattern via `re.search`
+            will be downloaded (e.g., ``r'\\.image\\.'``).
+            Defaults to `None` (all files are downloaded).
 
         Returns
         -------
         res: `parfive.Results`
             A `parfive.Results` instance or `None` if no URLs to download
         """
+        if filename_filter is not None:
+            if callable(filename_filter):
+                _filter_func = filename_filter
+            elif isinstance(filename_filter, (str, re.Pattern)):
+                pattern = re.compile(filename_filter)
+                def _filter_func(fn):
+                    return bool(pattern.search(fn))
+            else:
+                raise TypeError("filename_filter must be None, a callable, a regex pattern string, or a re.Pattern.")
+        else:
+            _filter_func = None
+
         c = drms.Client()
 
         # Private communication from JSOC say we should not use more than one connection.
@@ -520,12 +550,18 @@ class JSOCClient(BaseClient):
             path = os.path.join(path, '{file}')
 
         paths = []
+        urls = []
         for request in requests:
             if request.method == 'url-tar':
-                fname = path.format(file=Path(request.tarfile).name)
-                paths.append(os.path.expanduser(fname))
-            else:
-                for filename in request.data['filename']:
+                tar_name = Path(request.tarfile).name
+                if _filter_func is None or _filter_func(tar_name):
+                    fname = path.format(file=tar_name)
+                    paths.append(os.path.expanduser(fname))
+                    urls.extend(list(request.urls.url))
+            elif request.protocol == 'as-is':
+                for filename, url in zip(request.data['filename'], request.urls.url):
+                    if _filter_func is not None and not _filter_func(str(filename)):
+                        continue
                     # Ensure we don't duplicate the file extension
                     ext = os.path.splitext(filename)[1]
                     if path.endswith(ext):
@@ -533,8 +569,22 @@ class JSOCClient(BaseClient):
                     else:
                         fname = path
                     fname = fname.format(file=filename)
-                    fname = os.path.expanduser(fname)
-                    paths.append(fname)
+                    paths.append(os.path.expanduser(fname))
+                    urls.append(url)
+            else:
+                url_dir = request.request_url + '/'
+                for filename in request.data['filename']:
+                    if _filter_func is not None and not _filter_func(str(filename)):
+                        continue
+                    # Ensure we don't duplicate the file extension
+                    ext = os.path.splitext(filename)[1]
+                    if path.endswith(ext):
+                        fname = path.strip(ext)
+                    else:
+                        fname = path
+                    fname = fname.format(file=filename)
+                    paths.append(os.path.expanduser(fname))
+                    urls.append(urllib.parse.urljoin(url_dir, filename))
 
         dl_set = True
         if not downloader:
@@ -543,15 +593,6 @@ class JSOCClient(BaseClient):
             if max_conn != self.default_max_conn:
                 log.info("Setting max parallel downloads to 1 for the JSOC client.")
             downloader = Downloader(max_conn=max_conn, progress=progress, overwrite=overwrite, max_splits=max_splits)
-        urls = []
-        for request in requests:
-            if request.status == 0:
-                if request.protocol == 'as-is' or request.method == 'url-tar':
-                    urls.extend(list(request.urls.url))
-                else:
-                    for _, data in request.data.iterrows():
-                        url_dir = request.request_url + '/'
-                        urls.append(urllib.parse.urljoin(url_dir, data['filename']))
 
         if urls:
             if progress:
