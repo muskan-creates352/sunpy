@@ -521,9 +521,11 @@ def test_get_request_filename_filter_as_is_protocol(client, tmp_path):
 def test_fetch_forwards_filename_filter(mocker, client, jsoc_response_double):
     mock_get = mocker.patch("sunpy.net.jsoc.jsoc.JSOCClient.get_request")
     mocker.patch("sunpy.net.jsoc.jsoc.JSOCClient.request_data")
-    custom_filter = lambda f: "image" in f
+
+    def custom_filter(f):
+        return "image" in f
+
     client.fetch(jsoc_response_double, sleep=0, filename_filter=custom_filter)
     assert mock_get.call_count == 1
     _, kwargs = mock_get.call_args
     assert kwargs.get("filename_filter") is custom_filter
-
